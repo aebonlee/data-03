@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>모임 상세 · 스카이라이더스</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚴</text></svg>">
+<link rel="stylesheet" href="assets/css/style.css">
+<style>
+  .detail-grid { display:grid; grid-template-columns: 1fr 360px; gap:28px; align-items:start; }
+  .apply-card  { position: sticky; top: 90px; }
+  @media (max-width: 900px){ .detail-grid { grid-template-columns: 1fr; } .apply-card { position: static; } }
+</style>
+</head>
+<body>
+
+<section class="page-head" id="head">
+  <span class="cloud c1">☁️</span>
+  <span class="cloud c2">🚲</span>
+  <h1 id="headTitle">모임 상세</h1>
+  <p id="headSub">불러오는 중…</p>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="mb-2"><a href="meetups.html" class="small">← 모임 일정으로</a></div>
+    <div class="detail-grid" id="wrap"><div class="loading">불러오는 중…</div></div>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+(async () => {
+  await App.mount('meetups');
+  const E  = App.escapeHtml;
+  const id = Number(App.qs('id'));
+  const wrap = App.$('#wrap');
+
+  if (!id) { wrap.innerHTML = `<div class="empty">잘못된 접근입니다.</div>`; return; }
+
+  let meetup = null;
+  let myApplication = null;
+
+  /* ---------------- 데이터 로딩 ---------------- */
+  async function fetchMeetup() {
+    const { data, error } = await sb.from(T('meetups')).select('*').eq('id', id).maybeSingle();
+    if (error || !data) { wrap.innerHTML = `<div class="empty"><div class="icon">🤔</div>모임을 찾을 수 없습니다.</div>`; return null; }
+    return data;
+  }
+
+  async function fetchMyApplication() {
+    if (!App.isLogin()) return null;
+    const { data } = await sb.from(T('applications'))
+      .select('*').eq('meetup_id', id).eq('user_id', App.user().id)
+      .neq('status', 'cancelled').maybeSingle();
+    return data;
+  }
+
+  /* ---------------- 렌더 ---------------- */
+  function render() {
+    const m    = meetup;
+    const full = m.applied_count >= m.capacity;
+    const past = App.isPast(m.start_at);
+    const pct  = Math.min(100, Math.round((m.applied_count / m.capacity) * 100));
+
+    App.$('#headTitle').textContent = m.title;
+    App.$('#headSub').textContent   = `${App.MEETUP_TYPE[m.meetup_type]} · ${m.region} · ${App.fmtMeetupDate(m.start_at)}`;
+    document.title = `${m.title} · 스카이라이더스`;
+
+    wrap.innerHTML = `
+      <!-- 왼쪽 : 상세 내용 -->
+      <div>
+        <div class="card card-pad mb-3">
+          <div class="row mb-2" style="gap:6px;flex-wrap:wrap">
+            <span class="badge badge-${m.meetup_type === 'regular' ? 'regular' : 'small'}">${App.MEETUP_TYPE[m.meetup_type]}</span>
+            <span class="badge">${E(m.region)}</span>
+            <span class="badge badge-${m.difficulty}">${App.DIFFICULTY[m.difficulty]}</span>
+            <span class="badge badge-${past ? 'done' : m.status}">${past ? '종료' : App.STATUS[m.status]}</span>
+          </div>
+          <div style="font-size:3rem;line-height:1">${E(m.cover_emoji || '🚴')}</div>
+          <h2 class="mt-2">${E(m.title)}</h2>
+          <p class="muted">${E(m.summary || '')}</p>
+          <hr>
+          <div style="white-space:pre-wrap;line-height:1.85">${E(m.content || '')}</div>
+        </div>
+
+        <div class="card card-pad">
+          <h3>🗺️ 코스 정보</h3>
+          <div class="meta-list mt-2">
+            <div class="item"><span class="k">일시</span><span class="v">${App.fmtMeetupDate(m.start_at)}${m.end_at ? ' ~ ' + App.fmtMeetupDate(m.end_at) : ''}</span></div>
+            <div class="item"><span class="k">지역</span><span class="v">${E(m.region)}</span></div>
+            <div class="item"><span class="k">장소</span><span class="v">${E(m.place || '-')}</span></div>
+            <div class="item"><span class="k">집결지</span><span class="v">${E(m.meeting_point || '-')}</span></div>
+            <div class="item"><span class="k">코스</span><span class="v">${E(m.course || '-')}</span></div>
+            <div class="item"><span class="k">거리</span><span class="v">${m.distance_km ?? '-'} km</span></div>
+            <div class="item"><span class="k">난이도</span><span class="v">${App.DIFFICULTY[m.difficulty]}</span></div>
+            <div class="item"><span class="k">참가비</span><span class="v">${m.fee > 0 ? App.won(m.fee) + '원' : '무료'}</span></div>
+            <div class="item"><span class="k">정원</span><span class="v">${m.capacity}명 (현재 ${m.applied_count}명)</span></div>
+          </div>
+        </div>
+
+        <div id="adminApps"></div>
+      </div>
+
+      <!-- 오른쪽 : 신청 카드 -->
+      <div class="apply-card">
+        <div class="card card-pad">
+          <h3 class="mb-1">참가 신청</h3>
+          <div class="progress mt-2"><span style="width:${pct}%"></span></div>
+          <p class="tiny muted mt-1 mb-3">신청 ${m.applied_count} / ${m.capacity}명 ${full ? '· 정원 마감' : `· ${m.capacity - m.applied_count}자리 남음`}</p>
+          <div id="applyArea"></div>
+        </div>
+        <p class="tiny muted mt-2 text-center">
+          비회원도 신청할 수 있습니다.<br>취소용 비밀번호를 꼭 기억해 주세요.
+        </p>
+      </div>`;
+
+    renderApplyArea();
+    if (App.isAdmin()) renderAdminApps();
+  }
+
+  /* ---------------- 신청 영역 ---------------- */
+  function renderApplyArea() {
+    const box = App.$('#applyArea');
+    const m   = meetup;
+    const past = App.isPast(m.start_at);
+    const full = m.applied_count >= m.capacity;
+
+    if (past || m.status === 'done') {
+      box.innerHTML = `<div class="alert alert-info mb-0">이미 종료된 모임입니다. 후기 게시판에서 그날의 기록을 확인해 보세요.
+        <div class="mt-2"><a href="board.html?board=review" class="btn btn-soft btn-sm">라이딩 후기 보기</a></div></div>`;
+      return;
+    }
+    if (m.status !== 'open') {
+      box.innerHTML = `<div class="alert alert-warn mb-0">현재 신청을 받지 않는 모임입니다.</div>`;
+      return;
+    }
+    if (myApplication) {
+      box.innerHTML = `
+        <div class="alert alert-info">
+          신청이 완료되었습니다.<br>
+          상태: <strong>${App.APP_STATUS[myApplication.status]}</strong>
+        </div>
+        <button class="btn btn-danger btn-block" id="btnCancel">신청 취소</button>`;
+      App.$('#btnCancel').addEventListener('click', cancelMine);
+      return;
+    }
+    if (full) {
+      box.innerHTML = `<div class="alert alert-warn mb-0">정원이 모두 찼습니다. 다음 모임을 기다려 주세요 🙏</div>`;
+      return;
+    }
+
+    const p = App.profile();
+    box.innerHTML = `
+      <form id="applyForm">
+        <div class="field">
+          <label>이름 <span class="req">*</span></label>
+          <input class="input" name="name" required maxlength="30" value="${E(p?.name || '')}" placeholder="홍길동">
+        </div>
+        <div class="field">
+          <label>연락처</label>
+          <input class="input" name="phone" maxlength="20" value="${E(p?.phone || '')}" placeholder="010-0000-0000">
+        </div>
+        <div class="field">
+          <label>이메일</label>
+          <input class="input" type="email" name="email" maxlength="80" value="${E(p?.email || App.user()?.email || '')}" placeholder="rider@example.com">
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>지역</label>
+            <select class="select" name="region">
+              ${App.REGIONS.map(r => `<option ${(p?.region === r) ? 'selected' : ''}>${r}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field">
+            <label>자전거 종류</label>
+            <select class="select" name="bike_type">
+              ${App.BIKE_TYPES.map(b => `<option>${b}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label>남기실 말씀</label>
+          <textarea class="textarea" name="message" style="min-height:88px" maxlength="500" placeholder="처음 참여합니다 / 저지 사이즈 L 등"></textarea>
+        </div>
+        ${App.isLogin() ? '' : `
+        <div class="field">
+          <label>취소용 비밀번호 <span class="req">*</span></label>
+          <input class="input" type="password" name="password" minlength="4" maxlength="30" required placeholder="4자 이상">
+          <p class="field-hint">신청 취소·조회 시 사용합니다.</p>
+        </div>`}
+        <button class="btn btn-primary btn-block btn-lg" type="submit" id="btnApply">🚴 신청하기</button>
+        ${App.isLogin() ? '' : `<p class="tiny muted text-center mt-2">
+          <a href="login.html">로그인</a>하면 마이페이지에서 신청 내역을 관리할 수 있습니다.</p>`}
+      </form>`;
+
+    App.$('#applyForm').addEventListener('submit', submitApply);
+  }
+
+  /* ---------------- 신청 (CREATE) ---------------- */
+  async function submitApply(e) {
+    e.preventDefault();
+    const f   = e.target;
+    const btn = App.$('#btnApply');
+    btn.disabled = true; btn.textContent = '신청 중…';
+
+    const { data, error } = await sb.rpc('bike_apply_meetup', {
+      p_meetup_id: id,
+      p_name:      f.name.value.trim(),
+      p_phone:     f.phone.value.trim() || null,
+      p_email:     f.email.value.trim() || null,
+      p_region:    f.region.value,
+      p_bike_type: f.bike_type.value,
+      p_message:   f.message.value.trim() || null,
+      p_password:  f.password ? f.password.value : null
+    });
+
+    btn.disabled = false; btn.textContent = '🚴 신청하기';
+    if (error) { App.err(App.readError(error)); return; }
+
+    App.ok('신청이 완료되었습니다! 🎉');
+    meetup = await fetchMeetup();
+    myApplication = await fetchMyApplication();
+    if (!App.isLogin()) {
+      localStorage.setItem('skyriders-last-application', String(data));
+    }
+    render();
+  }
+
+  /* ---------------- 신청 취소 (회원) ---------------- */
+  async function cancelMine() {
+    if (!App.confirmBox('신청을 취소하시겠습니까?')) return;
+    const { error } = await sb.rpc('bike_cancel_application', { p_id: myApplication.id, p_password: null });
+    if (error) { App.err(App.readError(error)); return; }
+    App.ok('신청이 취소되었습니다.');
+    meetup = await fetchMeetup();
+    myApplication = null;
+    render();
+  }
+
+  /* ---------------- 관리자: 신청자 목록 ---------------- */
+  async function renderAdminApps() {
+    const box = App.$('#adminApps');
+    const { data, error } = await sb.from(T('applications'))
+      .select('*').eq('meetup_id', id).order('created_at', { ascending: false });
+    if (error) { box.innerHTML = ''; return; }
+
+    box.innerHTML = `
+      <div class="card card-pad mt-3">
+        <div class="row-between mb-2">
+          <h3 class="mb-0">👥 신청자 관리 <span class="badge">${data.length}명</span></h3>
+          <button class="btn btn-ghost btn-sm" id="btnCsv">CSV 내려받기</button>
+        </div>
+        <div style="overflow-x:auto">
+        <table class="small">
+          <thead><tr>
+            <th>이름</th><th>연락처</th><th>지역</th><th>자전거</th><th>메모</th><th>상태</th><th>신청일</th><th></th>
+          </tr></thead>
+          <tbody>${data.map(a => `
+            <tr>
+              <td><strong>${E(a.name)}</strong></td>
+              <td>${E(a.phone || '-')}</td>
+              <td>${E(a.region || '-')}</td>
+              <td>${E(a.bike_type || '-')}</td>
+              <td style="max-width:220px">${E(a.message || '-')}</td>
+              <td>
+                <select class="select" data-app="${a.id}" style="padding:5px 8px;font-size:.82rem">
+                  ${Object.entries(App.APP_STATUS).map(([k, v]) =>
+                    `<option value="${k}" ${a.status === k ? 'selected' : ''}>${v}</option>`).join('')}
+                </select>
+              </td>
+              <td class="tiny muted">${App.fmtDate(a.created_at)}</td>
+              <td><button class="btn btn-danger btn-sm" data-del="${a.id}">삭제</button></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        </div>
+      </div>`;
+
+    box.addEventListener('change', async (e) => {
+      const sel = e.target.closest('[data-app]'); if (!sel) return;
+      const { error } = await sb.from(T('applications'))
+        .update({ status: sel.value }).eq('id', Number(sel.dataset.app));
+      if (error) App.err(App.readError(error));
+      else { App.ok('상태를 변경했습니다.'); meetup = await fetchMeetup(); render(); }
+    });
+    box.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-del]'); if (!btn) return;
+      if (!App.confirmBox('이 신청을 삭제할까요?')) return;
+      const { error } = await sb.from(T('applications')).delete().eq('id', Number(btn.dataset.del));
+      if (error) App.err(App.readError(error));
+      else { App.ok('삭제했습니다.'); meetup = await fetchMeetup(); render(); }
+    });
+    App.$('#btnCsv')?.addEventListener('click', () => {
+      const head = ['이름', '연락처', '이메일', '지역', '자전거', '메모', '상태', '신청일'];
+      const rows = data.map(a => [a.name, a.phone, a.email, a.region, a.bike_type,
+        (a.message || '').replace(/\n/g, ' '), App.APP_STATUS[a.status], App.fmtDateTime(a.created_at)]);
+      const csv = '﻿' + [head, ...rows]
+        .map(r => r.map(c => `"${String(c ?? '').replaceAll('"', '""')}"`).join(',')).join('\n');
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = `신청자_${meetup.title}.csv`; a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+
+  /* ---------------- 시작 ---------------- */
+  meetup = await fetchMeetup();
+  if (!meetup) return;
+  myApplication = await fetchMyApplication();
+  render();
+})();
+</script>
+</body>
+</html>

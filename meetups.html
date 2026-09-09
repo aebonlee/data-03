@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>모임 일정 · 스카이라이더스</title>
+<meta name="description" content="연 4회 정기모임과 매달 열리는 소규모 모임 일정을 확인하고 신청하세요.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚴</text></svg>">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<section class="page-head">
+  <span class="cloud c1">☁️</span>
+  <span class="cloud c2">🚲</span>
+  <h1>모임 일정</h1>
+  <p>연 4회 정기모임 · 매달 소규모 모임 — 원하는 모임에 바로 신청하세요</p>
+</section>
+
+<section class="section">
+  <div class="container">
+
+    <!-- 필터 -->
+    <div class="card card-body mb-3">
+      <div class="row-between">
+        <div class="chips" id="typeChips">
+          <button class="chip active" data-type="">전체</button>
+          <button class="chip" data-type="regular">🗓️ 정기모임</button>
+          <button class="chip" data-type="small">🚲 소규모 모임</button>
+        </div>
+        <div class="row">
+          <select class="select" id="regionSel" style="width:auto;min-width:120px">
+            <option value="">전체 지역</option>
+          </select>
+          <select class="select" id="stateSel" style="width:auto;min-width:130px">
+            <option value="upcoming">예정된 모임</option>
+            <option value="open">신청 접수중</option>
+            <option value="past">지난 모임</option>
+            <option value="all">전체 보기</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div id="adminBar"></div>
+
+    <div class="grid grid-3" id="list"><div class="loading">불러오는 중…</div></div>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+(async () => {
+  await App.mount('meetups');
+  const E = App.escapeHtml;
+
+  /* 지역 셀렉트 채우기 */
+  const regionSel = App.$('#regionSel');
+  App.REGIONS.forEach(r => regionSel.insertAdjacentHTML('beforeend', `<option value="${r}">${r}</option>`));
+
+  /* 관리자면 등록 버튼 노출 */
+  if (App.isAdmin()) {
+    App.$('#adminBar').innerHTML =
+      `<div class="row-between mb-2"><span class="small muted">관리자 모드</span>
+       <a href="admin.html#meetups" class="btn btn-soft btn-sm">＋ 모임 등록·관리</a></div>`;
+  }
+
+  const state = { type: App.qs('type', ''), region: '', view: 'upcoming' };
+  if (state.type) {
+    App.$$('#typeChips .chip').forEach(c => c.classList.toggle('active', c.dataset.type === state.type));
+  }
+
+  App.$('#typeChips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip'); if (!chip) return;
+    App.$$('#typeChips .chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    state.type = chip.dataset.type;
+    load();
+  });
+  regionSel.addEventListener('change', () => { state.region = regionSel.value; load(); });
+  App.$('#stateSel').addEventListener('change', (e) => { state.view = e.target.value; load(); });
+
+  async function load() {
+    const box = App.$('#list');
+    box.innerHTML = `<div class="loading">불러오는 중…</div>`;
+
+    let q = sb.from(T('meetups')).select('*');
+    if (state.type)   q = q.eq('meetup_type', state.type);
+    if (state.region) q = q.eq('region', state.region);
+
+    const now = new Date().toISOString();
+    if (state.view === 'upcoming')   q = q.gte('start_at', now).order('start_at', { ascending: true });
+    else if (state.view === 'open')  q = q.eq('status', 'open').order('start_at', { ascending: true });
+    else if (state.view === 'past')  q = q.lt('start_at', now).order('start_at', { ascending: false });
+    else                             q = q.order('start_at', { ascending: false });
+
+    const { data, error } = await q;
+    if (error) { box.innerHTML = `<div class="empty">불러오지 못했습니다: ${E(error.message)}</div>`; return; }
+    if (!data.length) {
+      box.innerHTML = `<div class="empty" style="grid-column:1/-1">
+        <div class="icon">🚲</div><p>조건에 맞는 모임이 없습니다.</p>
+        <p class="small">다른 지역이나 기간을 선택해 보세요.</p></div>`;
+      return;
+    }
+
+    box.innerHTML = data.map(m => {
+      const full = m.applied_count >= m.capacity;
+      const pct  = Math.min(100, Math.round((m.applied_count / m.capacity) * 100));
+      const past = App.isPast(m.start_at);
+      return `
+      <a class="card card-hover" href="meetup.html?id=${m.id}" style="${past ? 'opacity:.72' : ''}">
+        <div class="card-emoji">${E(m.cover_emoji || '🚴')}</div>
+        <div class="card-body">
+          <div class="row mb-1" style="gap:6px;flex-wrap:wrap">
+            <span class="badge badge-${m.meetup_type === 'regular' ? 'regular' : 'small'}">${App.MEETUP_TYPE[m.meetup_type]}</span>
+            <span class="badge">${E(m.region)}</span>
+            <span class="badge badge-${m.difficulty}">${App.DIFFICULTY[m.difficulty]}</span>
+            ${past ? '<span class="badge badge-done">종료</span>'
+                   : full ? '<span class="badge badge-closed">정원 마감</span>'
+                          : `<span class="badge badge-new">${App.dday(m.start_at)}</span>`}
+          </div>
+          <h3 style="margin-bottom:6px">${E(m.title)}</h3>
+          <p class="small muted" style="margin-bottom:14px">${E(m.summary || '')}</p>
+          <div class="meta-list tiny mb-2">
+            <div class="item"><span class="k">📅 일시</span><span class="v">${App.fmtMeetupDate(m.start_at)}</span></div>
+            <div class="item"><span class="k">📍 집결</span><span class="v">${E(m.meeting_point || m.place || '-')}</span></div>
+            <div class="item"><span class="k">🚴 코스</span><span class="v">${m.distance_km ?? '-'}km</span></div>
+            <div class="item"><span class="k">💰 참가비</span><span class="v">${m.fee > 0 ? App.won(m.fee) + '원' : '무료'}</span></div>
+          </div>
+          <div class="progress"><span style="width:${pct}%"></span></div>
+          <div class="tiny muted mt-1">신청 ${m.applied_count} / ${m.capacity}명</div>
+        </div>
+      </a>`;
+    }).join('');
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>

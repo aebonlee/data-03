@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>커뮤니티 · 스카이라이더스</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚴</text></svg>">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<section class="page-head">
+  <span class="cloud c1">☁️</span>
+  <span class="cloud c2">💬</span>
+  <h1 id="headTitle">커뮤니티</h1>
+  <p id="headSub">&nbsp;</p>
+</section>
+
+<section class="section">
+  <div class="container">
+
+    <!-- 게시판 탭 -->
+    <div class="chips mb-3" id="boardTabs"></div>
+
+    <!-- 검색 / 글쓰기 -->
+    <div class="row-between mb-3">
+      <div class="small muted" id="totalInfo">&nbsp;</div>
+      <div class="row">
+        <form class="row" id="searchForm" style="gap:8px">
+          <input class="input" id="searchInput" placeholder="제목·내용·작성자 검색" style="width:220px">
+          <button class="btn btn-ghost btn-sm" type="submit">검색</button>
+        </form>
+        <a class="btn btn-primary btn-sm" id="btnWrite" href="#">✏️ 글쓰기</a>
+      </div>
+    </div>
+
+    <div id="listArea"><div class="loading">불러오는 중…</div></div>
+    <div class="pager" id="pager"></div>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+(async () => {
+  await App.mount('board');
+  const E = App.escapeHtml;
+
+  const boardKey = App.BOARDS[App.qs('board', 'notice')] ? App.qs('board', 'notice') : 'notice';
+  const meta     = App.BOARDS[boardKey];
+
+  let page   = Number(App.qs('page', 1)) || 1;
+  let search = App.qs('q', '') || '';
+  const PER  = meta.layout === 'gallery' ? 9 : 10;
+
+  /* ---- 헤더 ---- */
+  document.title = `${meta.name} · 스카이라이더스`;
+  App.$('#headTitle').textContent = `${meta.emoji} ${meta.name}`;
+  App.$('#headSub').textContent   = meta.desc;
+  App.$('#searchInput').value     = search;
+
+  /* ---- 탭 ---- */
+  App.$('#boardTabs').innerHTML = Object.values(App.BOARDS).map(b =>
+    `<a class="chip ${b.key === boardKey ? 'active' : ''}" href="board.html?board=${b.key}">${b.emoji} ${b.name}</a>`).join('');
+
+  /* ---- 글쓰기 버튼 (공지사항은 관리자만) ---- */
+  const writeBtn = App.$('#btnWrite');
+  if (meta.adminOnly && !App.isAdmin()) writeBtn.style.display = 'none';
+  else writeBtn.href = `write.html?board=${boardKey}`;
+
+  /* ---- 검색 ---- */
+  App.$('#searchForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    search = App.$('#searchInput').value.trim();
+    page = 1;
+    syncUrl(); load();
+  });
+
+  function syncUrl() {
+    const p = new URLSearchParams({ board: boardKey });
+    if (search) p.set('q', search);
+    if (page > 1) p.set('page', page);
+    history.replaceState(null, '', 'board.html?' + p.toString());
+  }
+
+  /* ---- 목록 로딩 ---- */
+  async function load() {
+    const box = App.$('#listArea');
+    box.innerHTML = `<div class="loading">불러오는 중…</div>`;
+
+    const { data, error } = await sb.rpc('bike_list_posts', {
+      p_board:  boardKey,
+      p_search: search || null,
+      p_region: null,
+      p_limit:  PER,
+      p_offset: (page - 1) * PER
+    });
+
+    if (error) { box.innerHTML = `<div class="empty">불러오지 못했습니다: ${E(error.message)}</div>`; return; }
+
+    const total = data.length ? Number(data[0].total_count) : 0;
+    App.$('#totalInfo').textContent = search
+      ? `"${search}" 검색 결과 ${total}건`
+      : `전체 ${total}건`;
+
+    if (!data.length) {
+      box.innerHTML = `<div class="empty"><div class="icon">${meta.emoji}</div>
+        <p>${search ? '검색 결과가 없습니다.' : '아직 등록된 글이 없습니다.'}</p>
+        ${(!meta.adminOnly || App.isAdmin()) ? `<a class="btn btn-primary btn-sm mt-2" href="write.html?board=${boardKey}">첫 글 작성하기</a>` : ''}
+      </div>`;
+      App.$('#pager').innerHTML = '';
+      return;
+    }
+
+    box.innerHTML = meta.layout === 'gallery' ? galleryHtml(data) : tableHtml(data, total);
+    renderPager(total);
+  }
+
+  /* ---- 목록형 ---- */
+  function tableHtml(rows, total) {
+    const startNo = total - (page - 1) * PER;
+    return `
+    <div class="board-table">
+      <table>
+        <thead><tr>
+          <th class="col-no">번호</th>
+          <th>제목</th>
+          <th class="col-name">작성자</th>
+          <th class="col-date">작성일</th>
+          <th class="col-views">조회</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map((p, i) => `
+          <tr class="${p.is_pinned ? 'pinned' : ''}">
+            <td class="col-no">${p.is_pinned ? '<span class="badge" style="padding:2px 8px">공지</span>' : (startNo - i)}</td>
+            <td>
+              <a class="title-link" href="post.html?id=${p.id}">
+                ${p.is_secret ? '🔒 ' : ''}${E(p.title)}
+              </a>
+              ${Number(p.comment_count) > 0 ? `<span class="badge" style="margin-left:6px;padding:1px 7px">💬 ${p.comment_count}</span>` : ''}
+              ${App.isNew(p.created_at) ? '<span class="badge badge-new" style="margin-left:4px;padding:1px 7px">N</span>' : ''}
+              ${boardKey === 'qna' ? (p.is_answered
+                  ? '<span class="badge badge-open" style="margin-left:4px;padding:1px 8px">답변완료</span>'
+                  : '<span class="badge" style="margin-left:4px;padding:1px 8px">답변대기</span>') : ''}
+            </td>
+            <td class="col-name">${E(p.author_name)}</td>
+            <td class="col-date">${App.fmtListDate(p.created_at)}</td>
+            <td class="col-views">${p.view_count}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  }
+
+  /* ---- 갤러리형 (라이딩 후기) ---- */
+  function galleryHtml(rows) {
+    return `<div class="gallery-grid">` + rows.map(p => `
+      <a class="card card-hover gallery-card" href="post.html?id=${p.id}">
+        <div class="thumb">${p.image_url
+          ? `<img src="${E(p.image_url)}" alt="${E(p.title)}" loading="lazy">`
+          : `<div class="card-emoji" style="height:100%">📸</div>`}</div>
+        <div class="card-body">
+          ${p.region ? `<span class="badge mb-1">${E(p.region)}</span>` : ''}
+          <h3>${E(p.title)}</h3>
+          <p class="tiny muted mb-0">
+            ${E(p.author_name)} · ${App.fmtDate(p.created_at)} · 조회 ${p.view_count}
+            ${Number(p.comment_count) > 0 ? ` · 💬 ${p.comment_count}` : ''}
+          </p>
+        </div>
+      </a>`).join('') + `</div>`;
+  }
+
+  /* ---- 페이지네이션 ---- */
+  function renderPager(total) {
+    const last = Math.max(1, Math.ceil(total / PER));
+    if (last <= 1) { App.$('#pager').innerHTML = ''; return; }
+
+    const from = Math.max(1, page - 2), to = Math.min(last, from + 4);
+    let html = `<button data-p="${page - 1}" ${page === 1 ? 'disabled' : ''}>‹</button>`;
+    if (from > 1) html += `<button data-p="1">1</button>${from > 2 ? '<button disabled>…</button>' : ''}`;
+    for (let i = from; i <= to; i++)
+      html += `<button data-p="${i}" class="${i === page ? 'active' : ''}">${i}</button>`;
+    if (to < last) html += `${to < last - 1 ? '<button disabled>…</button>' : ''}<button data-p="${last}">${last}</button>`;
+    html += `<button data-p="${page + 1}" ${page === last ? 'disabled' : ''}>›</button>`;
+    App.$('#pager').innerHTML = html;
+  }
+
+  App.$('#pager').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-p]'); if (!b || b.disabled) return;
+    page = Number(b.dataset.p);
+    syncUrl(); load();
+    window.scrollTo({ top: 200, behavior: 'smooth' });
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>
