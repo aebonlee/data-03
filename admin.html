@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>관리자 · 스카이라이더스</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚴</text></svg>">
+<link rel="stylesheet" href="assets/css/style.css">
+<style>
+  .admin-table table { font-size: .88rem; }
+  .admin-table td, .admin-table th { padding: 11px 10px; }
+  .admin-table .nowrap { white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<section class="page-head">
+  <span class="cloud c1">☁️</span>
+  <span class="cloud c2">⚙️</span>
+  <h1>관리자 페이지</h1>
+  <p>모임 · 코스 · 게시글 · 신청자를 한곳에서 관리합니다</p>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div id="wrap"><div class="loading">불러오는 중…</div></div>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+(async () => {
+  await App.mount('');
+  const E = App.escapeHtml;
+  const wrap = App.$('#wrap');
+
+  /* ---------- 접근 제어 ---------- */
+  if (!App.isLogin()) {
+    wrap.innerHTML = `<div class="empty"><div class="icon">🔒</div><p>관리자만 접근할 수 있습니다.</p>
+      <a class="btn btn-primary btn-sm mt-2" href="login.html?next=admin.html">로그인</a></div>`;
+    return;
+  }
+  if (!App.isAdmin()) {
+    wrap.innerHTML = `<div class="empty"><div class="icon">🚫</div><p>관리자 권한이 없습니다.</p>
+      <p class="small">마이페이지 → 프로필 설정에서 관리자 코드를 입력하세요.</p>
+      <a class="btn btn-ghost btn-sm mt-2" href="mypage.html">마이페이지로</a></div>`;
+    return;
+  }
+
+  /* ---------- 유틸 ---------- */
+  const pad = n => String(n).padStart(2, '0');
+  /** ISO 문자열 → <input type="datetime-local"> 값 (로컬 시각) */
+  const toLocalInput = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  /** <input type="datetime-local"> 값 → ISO */
+  const toIso = (v) => v ? new Date(v).toISOString() : null;
+
+  const TABS = [
+    { key: 'dash',     label: '📊 대시보드' },
+    { key: 'meetups',  label: '🗓️ 모임 관리' },
+    { key: 'courses',  label: '🗺️ 코스 관리' },
+    { key: 'posts',    label: '📝 게시글 관리' },
+    { key: 'apps',     label: '👥 신청자 관리' },
+    { key: 'members',  label: '🙋 회원 관리' }
+  ];
+
+  wrap.innerHTML = `
+    <div class="chips mb-3" id="tabs">
+      ${TABS.map((t, i) => `<button class="chip ${i === 0 ? 'active' : ''}" data-tab="${t.key}">${t.label}</button>`).join('')}
+    </div>
+    <div id="body"><div class="loading">불러오는 중…</div></div>`;
+
+  App.$('#tabs').addEventListener('click', (e) => {
+    const c = e.target.closest('.chip'); if (!c) return;
+    App.$$('#tabs .chip').forEach(x => x.classList.remove('active'));
+    c.classList.add('active');
+    location.hash = c.dataset.tab;
+    open(c.dataset.tab);
+  });
+
+  function open(tab) {
+    ({ dash: tabDash, meetups: tabMeetups, courses: tabCourses,
+       posts: tabPosts, apps: tabApps, members: tabMembers }[tab] || tabDash)();
+  }
+
+  const initial = (location.hash || '#dash').slice(1);
+  const initTab = TABS.find(t => t.key === initial) ? initial : 'dash';
+  App.$$('#tabs .chip').forEach(c => c.classList.toggle('active', c.dataset.tab === initTab));
+  open(initTab);
+
+  /* =================================================================
+   * 대시보드
+   * ================================================================= */
+  async function tabDash() {
+    const body = App.fresh('#body');
+    body.innerHTML = `<div class="loading">불러오는 중…</div>`;
+    const now = new Date().toISOString();
+    const [mts, upcoming, apps, pending, posts, members, courses] = await Promise.all([
+      sb.from(T('meetups')).select('id', { count: 'exact', head: true }),
+      sb.from(T('meetups')).select('id', { count: 'exact', head: true }).gte('start_at', now).eq('status', 'open'),
+      sb.from(T('applications')).select('id', { count: 'exact', head: true }).neq('status', 'cancelled'),
+      sb.from(T('applications')).select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      sb.from(T('posts')).select('id', { count: 'exact', head: true }),
+      sb.from(T('profiles')).select('id', { count: 'exact', head: true }),
+      sb.from(T('courses')).select('id', { count: 'exact', head: true })
+    ]);
+
+    const { data: recent } = await sb.from(T('applications'))
+      .select('*, meetup:' + T('meetups') + '(title)')
+      .order('created_at', { ascending: false }).limit(8);
+
+    body.innerHTML = `
+      <div class="grid grid-4 mb-3">
+        <div class="stat"><div class="ico">🗓️</div><div class="num">${mts.count ?? 0}</div><div class="label">전체 모임</div></div>
+        <div class="stat"><div class="ico">📢</div><div class="num">${upcoming.count ?? 0}</div><div class="label">접수중 모임</div></div>
+        <div class="stat"><div class="ico">👥</div><div class="num">${apps.count ?? 0}</div><div class="label">유효 신청</div></div>
+        <div class="stat"><div class="ico">⏳</div><div class="num">${pending.count ?? 0}</div><div class="label">확정 대기</div></div>
+        <div class="stat"><div class="ico">📝</div><div class="num">${posts.count ?? 0}</div><div class="label">게시글</div></div>
+        <div class="stat"><div class="ico">🙋</div><div class="num">${members.count ?? 0}</div><div class="label">가입 회원</div></div>
+        <div class="stat"><div class="ico">🗺️</div><div class="num">${courses.count ?? 0}</div><div class="label">등록 코스</div></div>
+        <div class="stat"><div class="ico">☁️</div><div class="num">4</div><div class="label">연간 정기모임</div></div>
+      </div>
+
+      <div class="card card-pad">
+        <h3 class="mb-2">🕒 최근 신청</h3>
+        <div class="admin-table board-table"><table>
+          <thead><tr><th>모임</th><th>신청자</th><th>연락처</th><th>상태</th><th class="nowrap">신청일시</th></tr></thead>
+          <tbody>${(recent || []).map(a => `
+            <tr>
+              <td>${E(a.meetup?.title || '-')}</td>
+              <td><strong>${E(a.name)}</strong></td>
+              <td>${E(a.phone || '-')}</td>
+              <td><span class="badge badge-${a.status === 'cancelled' ? 'closed' : a.status === 'confirmed' ? 'open' : ''}">${App.APP_STATUS[a.status]}</span></td>
+              <td class="nowrap tiny muted">${App.fmtDateTime(a.created_at)}</td>
+            </tr>`).join('') || `<tr><td colspan="5" class="text-center muted">신청 내역이 없습니다.</td></tr>`}
+          </tbody>
+        </table></div>
+      </div>`;
+  }
+
+  /* =================================================================
+   * 모임 관리 (CRUD)
+   * ================================================================= */
+  async function tabMeetups(editRow = null, showForm = false) {
+    const body = App.fresh('#body');
+    const { data, error } = await sb.from(T('meetups')).select('*').order('start_at', { ascending: false });
+    if (error) { body.innerHTML = `<div class="empty">${E(App.readError(error))}</div>`; return; }
+
+    body.innerHTML = `
+      <div class="row-between mb-2">
+        <h3 class="mb-0">🗓️ 모임 관리 <span class="badge">${data.length}건</span></h3>
+        <button class="btn btn-primary btn-sm" id="btnNew">＋ 새 모임 등록</button>
+      </div>
+      <div id="formArea"></div>
+      <div class="admin-table board-table"><table>
+        <thead><tr>
+          <th>구분</th><th>제목</th><th>지역</th><th class="nowrap">일시</th>
+          <th>신청</th><th>상태</th><th></th>
+        </tr></thead>
+        <tbody>${data.map(m => `
+          <tr>
+            <td><span class="badge badge-${m.meetup_type === 'regular' ? 'regular' : 'small'}">${App.MEETUP_TYPE[m.meetup_type]}</span></td>
+            <td><a class="title-link" href="meetup.html?id=${m.id}">${E(m.cover_emoji || '')} ${E(m.title)}</a></td>
+            <td>${E(m.region)}</td>
+            <td class="nowrap tiny">${App.fmtDateTime(m.start_at)}</td>
+            <td class="nowrap">${m.applied_count}/${m.capacity}</td>
+            <td><span class="badge badge-${m.status}">${App.STATUS[m.status]}</span></td>
+            <td class="nowrap">
+              <button class="btn btn-ghost btn-sm" data-edit="${m.id}">수정</button>
+              <button class="btn btn-danger btn-sm" data-del="${m.id}">삭제</button>
+            </td>
+          </tr>`).join('') || `<tr><td colspan="7" class="text-center muted">등록된 모임이 없습니다.</td></tr>`}
+        </tbody>
+      </table></div>`;
+
+    if (showForm) renderMeetupForm(editRow);
+
+    App.$('#btnNew').addEventListener('click', () => renderMeetupForm(null));
+    body.addEventListener('click', async (e) => {
+      const ed = e.target.closest('[data-edit]');
+      const dl = e.target.closest('[data-del]');
+      if (ed) {
+        const row = data.find(x => x.id === Number(ed.dataset.edit));
+        renderMeetupForm(row);
+        window.scrollTo({ top: 240, behavior: 'smooth' });
+      }
+      if (dl) {
+        if (!App.confirmBox('모임을 삭제하면 신청 내역도 함께 삭제됩니다. 계속할까요?')) return;
+        const { error } = await sb.from(T('meetups')).delete().eq('id', Number(dl.dataset.del));
+        if (error) App.err(App.readError(error));
+        else { App.ok('삭제했습니다.'); tabMeetups(); }
+      }
+    });
+  }
+
+  function renderMeetupForm(row) {
+    const r = row || {};
+    App.$('#formArea').innerHTML = `
+      <div class="card card-pad mb-3">
+        <h3 class="mb-2">${row ? '✏️ 모임 수정' : '＋ 새 모임 등록'}</h3>
+        <form id="mForm">
+          <div class="field-row">
+            <div class="field"><label>구분 <span class="req">*</span></label>
+              <select class="select" name="meetup_type">
+                <option value="regular" ${r.meetup_type === 'regular' ? 'selected' : ''}>정기모임 (연 4회)</option>
+                <option value="small"   ${r.meetup_type !== 'regular' ? 'selected' : ''}>소규모 모임 (매달)</option>
+              </select></div>
+            <div class="field"><label>지역 <span class="req">*</span></label>
+              <select class="select" name="region">
+                ${App.REGIONS.map(x => `<option ${r.region === x ? 'selected' : ''}>${x}</option>`).join('')}
+              </select></div>
+          </div>
+          <div class="field"><label>제목 <span class="req">*</span></label>
+            <input class="input" name="title" required maxlength="120" value="${E(r.title || '')}"></div>
+          <div class="field"><label>한 줄 요약</label>
+            <input class="input" name="summary" maxlength="200" value="${E(r.summary || '')}"></div>
+          <div class="field"><label>상세 내용</label>
+            <textarea class="textarea" name="content" style="min-height:140px">${E(r.content || '')}</textarea></div>
+          <div class="field-row">
+            <div class="field"><label>시작 일시 <span class="req">*</span></label>
+              <input class="input" type="datetime-local" name="start_at" required value="${toLocalInput(r.start_at)}"></div>
+            <div class="field"><label>종료 일시</label>
+              <input class="input" type="datetime-local" name="end_at" value="${toLocalInput(r.end_at)}"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>장소</label>
+              <input class="input" name="place" maxlength="120" value="${E(r.place || '')}"></div>
+            <div class="field"><label>집결지</label>
+              <input class="input" name="meeting_point" maxlength="120" value="${E(r.meeting_point || '')}"></div>
+          </div>
+          <div class="field"><label>코스</label>
+            <input class="input" name="course" maxlength="200" value="${E(r.course || '')}" placeholder="출발 → 경유 → 도착"></div>
+          <div class="field-row">
+            <div class="field"><label>거리 (km)</label>
+              <input class="input" type="number" step="0.1" name="distance_km" value="${r.distance_km ?? ''}"></div>
+            <div class="field"><label>난이도</label>
+              <select class="select" name="difficulty">
+                ${Object.entries(App.DIFFICULTY).map(([k, v]) => `<option value="${k}" ${r.difficulty === k ? 'selected' : ''}>${v}</option>`).join('')}
+              </select></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>정원</label>
+              <input class="input" type="number" name="capacity" value="${r.capacity ?? 20}"></div>
+            <div class="field"><label>참가비 (원)</label>
+              <input class="input" type="number" name="fee" value="${r.fee ?? 0}"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>대표 이모지</label>
+              <input class="input" name="cover_emoji" maxlength="4" value="${E(r.cover_emoji || '🚴')}"></div>
+            <div class="field"><label>모집 상태</label>
+              <select class="select" name="status">
+                ${Object.entries(App.STATUS).map(([k, v]) => `<option value="${k}" ${r.status === k ? 'selected' : ''}>${v}</option>`).join('')}
+              </select></div>
+          </div>
+          <div class="row-between mt-2">
+            <button class="btn btn-ghost" type="button" id="mCancel">닫기</button>
+            <button class="btn btn-primary" type="submit">${row ? '수정 저장' : '등록하기'}</button>
+          </div>
+        </form>
+      </div>`;
+
+    App.$('#mCancel').addEventListener('click', () => App.$('#formArea').innerHTML = '');
+    App.$('#mForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      const payload = {
+        meetup_type:   f.meetup_type.value,
+        title:         f.title.value.trim(),
+        region:        f.region.value,
+        summary:       f.summary.value.trim() || null,
+        content:       f.content.value.trim() || null,
+        start_at:      toIso(f.start_at.value),
+        end_at:        toIso(f.end_at.value),
+        place:         f.place.value.trim() || null,
+        meeting_point: f.meeting_point.value.trim() || null,
+        course:        f.course.value.trim() || null,
+        distance_km:   f.distance_km.value === '' ? null : Number(f.distance_km.value),
+        difficulty:    f.difficulty.value,
+        capacity:      Number(f.capacity.value || 20),
+        fee:           Number(f.fee.value || 0),
+        cover_emoji:   f.cover_emoji.value || '🚴',
+        status:        f.status.value
+      };
+      const res = row
+        ? await sb.from(T('meetups')).update(payload).eq('id', row.id)
+        : await sb.from(T('meetups')).insert({ ...payload, created_by: App.user().id });
+      if (res.error) { App.err(App.readError(res.error)); return; }
+      App.ok(row ? '수정했습니다.' : '등록했습니다.');
+      tabMeetups();
+    });
+  }
+
+  /* =================================================================
+   * 코스 관리 (CRUD)
+   * ================================================================= */
+  async function tabCourses() {
+    const body = App.fresh('#body');
+    const { data, error } = await sb.from(T('courses')).select('*').order('sort_order');
+    if (error) { body.innerHTML = `<div class="empty">${E(App.readError(error))}</div>`; return; }
+
+    body.innerHTML = `
+      <div class="row-between mb-2">
+        <h3 class="mb-0">🗺️ 코스 관리 <span class="badge">${data.length}건</span></h3>
+        <button class="btn btn-primary btn-sm" id="btnNewC">＋ 새 코스 등록</button>
+      </div>
+      <div id="formAreaC"></div>
+      <div class="admin-table board-table"><table>
+        <thead><tr><th>지역</th><th>코스명</th><th>거리</th><th>난이도</th><th>공개</th><th>순서</th><th></th></tr></thead>
+        <tbody>${data.map(c => `
+          <tr>
+            <td><span class="badge">${E(c.region)}</span></td>
+            <td><strong>${E(c.emoji || '')} ${E(c.title)}</strong><div class="tiny muted">${E(c.summary || '')}</div></td>
+            <td class="nowrap">${c.distance_km ?? '-'}km</td>
+            <td><span class="badge badge-${c.difficulty}">${App.DIFFICULTY[c.difficulty]}</span></td>
+            <td>${c.is_published ? '✅' : '🚫'}</td>
+            <td>${c.sort_order}</td>
+            <td class="nowrap">
+              <button class="btn btn-ghost btn-sm" data-cedit="${c.id}">수정</button>
+              <button class="btn btn-danger btn-sm" data-cdel="${c.id}">삭제</button>
+            </td>
+          </tr>`).join('') || `<tr><td colspan="7" class="text-center muted">등록된 코스가 없습니다.</td></tr>`}
+        </tbody>
+      </table></div>`;
+
+    App.$('#btnNewC').addEventListener('click', () => renderCourseForm(null));
+    body.addEventListener('click', async (e) => {
+      const ed = e.target.closest('[data-cedit]');
+      const dl = e.target.closest('[data-cdel]');
+      if (ed) { renderCourseForm(data.find(x => x.id === Number(ed.dataset.cedit))); window.scrollTo({ top: 240, behavior: 'smooth' }); }
+      if (dl) {
+        if (!App.confirmBox('이 코스를 삭제할까요?')) return;
+        const { error } = await sb.from(T('courses')).delete().eq('id', Number(dl.dataset.cdel));
+        if (error) App.err(App.readError(error)); else { App.ok('삭제했습니다.'); tabCourses(); }
+      }
+    });
+  }
+
+  function renderCourseForm(row) {
+    const r = row || {};
+    App.$('#formAreaC').innerHTML = `
+      <div class="card card-pad mb-3">
+        <h3 class="mb-2">${row ? '✏️ 코스 수정' : '＋ 새 코스 등록'}</h3>
+        <form id="cForm">
+          <div class="field-row">
+            <div class="field"><label>지역 <span class="req">*</span></label>
+              <select class="select" name="region">${App.REGIONS.map(x => `<option ${r.region === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
+            <div class="field"><label>대표 이모지</label>
+              <input class="input" name="emoji" maxlength="4" value="${E(r.emoji || '🚵')}"></div>
+          </div>
+          <div class="field"><label>코스명 <span class="req">*</span></label>
+            <input class="input" name="title" required maxlength="120" value="${E(r.title || '')}"></div>
+          <div class="field"><label>한 줄 요약</label>
+            <input class="input" name="summary" maxlength="200" value="${E(r.summary || '')}"></div>
+          <div class="field"><label>상세 설명</label>
+            <textarea class="textarea" name="content" style="min-height:120px">${E(r.content || '')}</textarea></div>
+          <div class="field-row">
+            <div class="field"><label>거리 (km)</label>
+              <input class="input" type="number" step="0.1" name="distance_km" value="${r.distance_km ?? ''}"></div>
+            <div class="field"><label>소요 시간 (시간)</label>
+              <input class="input" type="number" step="0.5" name="duration_hours" value="${r.duration_hours ?? ''}"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label>난이도</label>
+              <select class="select" name="difficulty">${Object.entries(App.DIFFICULTY).map(([k, v]) => `<option value="${k}" ${r.difficulty === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+            <div class="field"><label>추천 시즌</label>
+              <input class="input" name="season" maxlength="40" value="${E(r.season || '')}" placeholder="봄·가을"></div>
+          </div>
+          <div class="field"><label>이미지 주소</label>
+            <input class="input" name="image_url" value="${E(r.image_url || '')}" placeholder="https://..."></div>
+          <div class="field"><label>지도 링크</label>
+            <input class="input" name="map_url" value="${E(r.map_url || '')}" placeholder="https://map..."></div>
+          <div class="field-row">
+            <div class="field"><label>정렬 순서</label>
+              <input class="input" type="number" name="sort_order" value="${r.sort_order ?? 0}"></div>
+            <div class="field"><label>공개 여부</label>
+              <label class="check mt-2"><input type="checkbox" name="is_published" ${r.is_published !== false ? 'checked' : ''}> 사이트에 공개</label></div>
+          </div>
+          <div class="row-between mt-2">
+            <button class="btn btn-ghost" type="button" id="cCancel">닫기</button>
+            <button class="btn btn-primary" type="submit">${row ? '수정 저장' : '등록하기'}</button>
+          </div>
+        </form>
+      </div>`;
+
+    App.$('#cCancel').addEventListener('click', () => App.$('#formAreaC').innerHTML = '');
+    App.$('#cForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      const payload = {
+        region:         f.region.value,
+        emoji:          f.emoji.value || '🚵',
+        title:          f.title.value.trim(),
+        summary:        f.summary.value.trim() || null,
+        content:        f.content.value.trim() || null,
+        distance_km:    f.distance_km.value === '' ? null : Number(f.distance_km.value),
+        duration_hours: f.duration_hours.value === '' ? null : Number(f.duration_hours.value),
+        difficulty:     f.difficulty.value,
+        season:         f.season.value.trim() || null,
+        image_url:      f.image_url.value.trim() || null,
+        map_url:        f.map_url.value.trim() || null,
+        sort_order:     Number(f.sort_order.value || 0),
+        is_published:   f.is_published.checked
+      };
+      const res = row
+        ? await sb.from(T('courses')).update(payload).eq('id', row.id)
+        : await sb.from(T('courses')).insert(payload);
+      if (res.error) { App.err(App.readError(res.error)); return; }
+      App.ok(row ? '수정했습니다.' : '등록했습니다.');
+      tabCourses();
+    });
+  }
+
+  /* =================================================================
+   * 게시글 관리
+   * ================================================================= */
+  async function tabPosts(board = '') {
+    const body = App.fresh('#body');
+    let q = sb.from(T('posts')).select('*').order('created_at', { ascending: false }).limit(200);
+    if (board) q = q.eq('board', board);
+    const { data, error } = await q;
+    if (error) { body.innerHTML = `<div class="empty">${E(App.readError(error))}</div>`; return; }
+
+    body.innerHTML = `
+      <div class="row-between mb-2">
+        <h3 class="mb-0">📝 게시글 관리 <span class="badge">${data.length}건</span></h3>
+        <div class="chips" id="pFilter">
+          <button class="chip ${board === '' ? 'active' : ''}" data-b="">전체</button>
+          ${Object.values(App.BOARDS).map(b => `<button class="chip ${board === b.key ? 'active' : ''}" data-b="${b.key}">${b.emoji} ${b.name}</button>`).join('')}
+        </div>
+      </div>
+      <div class="admin-table board-table"><table>
+        <thead><tr><th>게시판</th><th>제목</th><th>작성자</th><th class="nowrap">작성일</th><th>조회</th><th></th></tr></thead>
+        <tbody>${data.map(p => `
+          <tr class="${p.is_pinned ? 'pinned' : ''}">
+            <td class="nowrap"><span class="badge">${App.BOARDS[p.board]?.emoji} ${App.BOARDS[p.board]?.name}</span></td>
+            <td><a class="title-link" href="post.html?id=${p.id}">${p.is_secret ? '🔒 ' : ''}${E(p.title)}</a></td>
+            <td class="nowrap">${E(p.author_name)}${p.author_id ? '' : ' <span class="tiny muted">(비회원)</span>'}</td>
+            <td class="nowrap tiny">${App.fmtDate(p.created_at)}</td>
+            <td>${p.view_count}</td>
+            <td class="nowrap">
+              <button class="btn btn-ghost btn-sm" data-pin="${p.id}" data-on="${p.is_pinned ? 1 : 0}">${p.is_pinned ? '고정해제' : '고정'}</button>
+              <a class="btn btn-ghost btn-sm" href="write.html?board=${p.board}&id=${p.id}">수정</a>
+              <button class="btn btn-danger btn-sm" data-pdel="${p.id}">삭제</button>
+            </td>
+          </tr>`).join('') || `<tr><td colspan="6" class="text-center muted">게시글이 없습니다.</td></tr>`}
+        </tbody>
+      </table></div>`;
+
+    App.$('#pFilter').addEventListener('click', (e) => {
+      const c = e.target.closest('.chip'); if (!c) return;
+      tabPosts(c.dataset.b);
+    });
+    body.addEventListener('click', async (e) => {
+      const pin = e.target.closest('[data-pin]');
+      const del = e.target.closest('[data-pdel]');
+      if (pin) {
+        const { error } = await sb.from(T('posts'))
+          .update({ is_pinned: pin.dataset.on !== '1' }).eq('id', Number(pin.dataset.pin));
+        if (error) App.err(App.readError(error)); else { App.ok('변경했습니다.'); tabPosts(board); }
+      }
+      if (del) {
+        if (!App.confirmBox('이 글을 삭제할까요? 댓글도 함께 삭제됩니다.')) return;
+        const { error } = await sb.rpc('bike_delete_post', { p_id: Number(del.dataset.pdel), p_password: null });
+        if (error) App.err(App.readError(error)); else { App.ok('삭제했습니다.'); tabPosts(board); }
+      }
+    });
+  }
+
+  /* =================================================================
+   * 신청자 관리
+   * ================================================================= */
+  async function tabApps() {
+    const body = App.fresh('#body');
+    const { data, error } = await sb.from(T('applications'))
+      .select('*, meetup:' + T('meetups') + '(id,title,start_at,meetup_type)')
+      .order('created_at', { ascending: false }).limit(300);
+    if (error) { body.innerHTML = `<div class="empty">${E(App.readError(error))}</div>`; return; }
+
+    body.innerHTML = `
+      <div class="row-between mb-2">
+        <h3 class="mb-0">👥 신청자 관리 <span class="badge">${data.length}건</span></h3>
+        <button class="btn btn-ghost btn-sm" id="btnCsvAll">전체 CSV 내려받기</button>
+      </div>
+      <div class="admin-table board-table"><table>
+        <thead><tr>
+          <th>모임</th><th>이름</th><th>연락처</th><th>이메일</th><th>지역</th>
+          <th>자전거</th><th>상태</th><th class="nowrap">신청일</th><th></th>
+        </tr></thead>
+        <tbody>${data.map(a => `
+          <tr>
+            <td><a class="title-link" href="meetup.html?id=${a.meetup?.id}">${E(a.meetup?.title || '-')}</a></td>
+            <td class="nowrap"><strong>${E(a.name)}</strong>${a.user_id ? '' : ' <span class="tiny muted">(비회원)</span>'}</td>
+            <td class="nowrap">${E(a.phone || '-')}</td>
+            <td class="tiny">${E(a.email || '-')}</td>
+            <td>${E(a.region || '-')}</td>
+            <td>${E(a.bike_type || '-')}</td>
+            <td>
+              <select class="select" data-st="${a.id}" style="padding:5px 8px;font-size:.82rem">
+                ${Object.entries(App.APP_STATUS).map(([k, v]) => `<option value="${k}" ${a.status === k ? 'selected' : ''}>${v}</option>`).join('')}
+              </select>
+            </td>
+            <td class="nowrap tiny muted">${App.fmtDate(a.created_at)}</td>
+            <td><button class="btn btn-danger btn-sm" data-adel="${a.id}">삭제</button></td>
+          </tr>`).join('') || `<tr><td colspan="9" class="text-center muted">신청 내역이 없습니다.</td></tr>`}
+        </tbody>
+      </table></div>`;
+
+    body.addEventListener('change', async (e) => {
+      const sel = e.target.closest('[data-st]'); if (!sel) return;
+      const { error } = await sb.from(T('applications')).update({ status: sel.value }).eq('id', Number(sel.dataset.st));
+      if (error) App.err(App.readError(error)); else App.ok('상태를 변경했습니다.');
+    });
+    body.addEventListener('click', async (e) => {
+      const del = e.target.closest('[data-adel]'); if (!del) return;
+      if (!App.confirmBox('이 신청을 삭제할까요?')) return;
+      const { error } = await sb.from(T('applications')).delete().eq('id', Number(del.dataset.adel));
+      if (error) App.err(App.readError(error)); else { App.ok('삭제했습니다.'); tabApps(); }
+    });
+
+    App.$('#btnCsvAll').addEventListener('click', () => {
+      const head = ['모임', '이름', '연락처', '이메일', '지역', '자전거', '메모', '상태', '신청일시'];
+      const rows = data.map(a => [a.meetup?.title, a.name, a.phone, a.email, a.region, a.bike_type,
+        (a.message || '').replace(/\n/g, ' '), App.APP_STATUS[a.status], App.fmtDateTime(a.created_at)]);
+      const csv = '﻿' + [head, ...rows]
+        .map(r => r.map(c => `"${String(c ?? '').replaceAll('"', '""')}"`).join(',')).join('\n');
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url; link.download = '스카이라이더스_신청자.csv'; link.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+
+  /* =================================================================
+   * 회원 관리
+   * ================================================================= */
+  async function tabMembers() {
+    const body = App.fresh('#body');
+    const { data, error } = await sb.from(T('profiles'))
+      .select('*').order('created_at', { ascending: false }).limit(300);
+    if (error) { body.innerHTML = `<div class="empty">${E(App.readError(error))}</div>`; return; }
+
+    body.innerHTML = `
+      <h3 class="mb-2">🙋 회원 관리 <span class="badge">${data.length}명</span></h3>
+      <div class="admin-table board-table"><table>
+        <thead><tr><th>이름</th><th>이메일</th><th>연락처</th><th>지역</th><th>경력</th><th>권한</th><th class="nowrap">가입일</th></tr></thead>
+        <tbody>${data.map(m => `
+          <tr>
+            <td class="nowrap"><strong>${E(m.name)}</strong>${m.nickname ? ` <span class="tiny muted">(${E(m.nickname)})</span>` : ''}</td>
+            <td class="tiny">${E(m.email || '-')}</td>
+            <td class="nowrap">${E(m.phone || '-')}</td>
+            <td>${E(m.region || '-')}</td>
+            <td class="tiny">${({ beginner: '입문', intermediate: '중급', advanced: '상급' })[m.level] || '-'}</td>
+            <td>
+              <select class="select" data-role="${m.id}" style="padding:5px 8px;font-size:.82rem">
+                <option value="member" ${m.role === 'member' ? 'selected' : ''}>일반</option>
+                <option value="admin"  ${m.role === 'admin' ? 'selected' : ''}>관리자</option>
+              </select>
+            </td>
+            <td class="nowrap tiny muted">${App.fmtDate(m.created_at)}</td>
+          </tr>`).join('') || `<tr><td colspan="7" class="text-center muted">가입한 회원이 없습니다.</td></tr>`}
+        </tbody>
+      </table></div>
+      <p class="tiny muted mt-2">※ 회원 정보는 관리자만 조회할 수 있도록 RLS 정책이 설정되어 있습니다.</p>`;
+
+    body.addEventListener('change', async (e) => {
+      const sel = e.target.closest('[data-role]'); if (!sel) return;
+      if (sel.dataset.role === App.user().id && sel.value !== 'admin') {
+        App.err('본인의 관리자 권한은 해제할 수 없습니다.');
+        sel.value = 'admin'; return;
+      }
+      const { error } = await sb.from(T('profiles')).update({ role: sel.value }).eq('id', sel.dataset.role);
+      if (error) App.err(App.readError(error)); else App.ok('권한을 변경했습니다.');
+    });
+  }
+})();
+</script>
+</body>
+</html>

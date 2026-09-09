@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>스카이라이더스 SKY RIDERS · 로드 자전거 동호회</title>
+<meta name="description" content="하늘길을 달리는 로드 자전거 동호회. 연 4회 정기모임과 매달 소규모 모임으로 지역별 자전거 여행을 함께합니다.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚴</text></svg>">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<!-- ============ 히어로 ============ -->
+<section class="hero">
+  <span class="cloud c1">☁️</span>
+  <span class="cloud c2">☁️</span>
+  <span class="cloud c3">☁️</span>
+  <span class="cloud c4">🌤️</span>
+  <span class="cloud bike">🚲</span>
+  <div class="hero-inner">
+    <span class="hero-badge">☁️ 2026 시즌 회원 모집 중</span>
+    <h1>하늘길을 달리는<br>로드 자전거 동호회</h1>
+    <p>연 4회 정기모임과 매달 소규모 모임으로<br>전국 방방곡곡, 지역별 자전거 여행을 함께 만듭니다.</p>
+    <div class="hero-actions">
+      <a href="meetups.html" class="btn btn-primary btn-lg">🚴 모임 신청하기</a>
+      <a href="about.html" class="btn btn-ghost btn-lg">동호회 소개</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 통계 ============ -->
+<section class="section--tight" style="margin-top:-40px;position:relative;z-index:5">
+  <div class="container">
+    <div class="grid grid-4" id="statBox">
+      <div class="stat"><div class="ico">🗓️</div><div class="num">4</div><div class="label">연간 정기모임</div></div>
+      <div class="stat"><div class="ico">🚲</div><div class="num" id="statSmall">-</div><div class="label">올해 소규모 모임</div></div>
+      <div class="stat"><div class="ico">🗺️</div><div class="num" id="statCourse">-</div><div class="label">지역별 추천 코스</div></div>
+      <div class="stat"><div class="ico">📸</div><div class="num" id="statReview">-</div><div class="label">라이딩 후기</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 다가오는 모임 ============ -->
+<section class="section">
+  <div class="container">
+    <div class="section-title">
+      <span class="eyebrow">UPCOMING</span>
+      <h2>다가오는 모임</h2>
+      <p>신청 접수 중인 모임입니다. 지금 바로 참가 신청하세요.</p>
+    </div>
+    <div class="grid grid-3" id="upcoming"><div class="loading">불러오는 중…</div></div>
+    <div class="text-center mt-4"><a href="meetups.html" class="btn btn-ghost">전체 일정 보기 →</a></div>
+  </div>
+</section>
+
+<!-- ============ 지역별 코스 ============ -->
+<section class="section" style="background:linear-gradient(180deg,#fff 0%,var(--sky-50) 100%)">
+  <div class="container">
+    <div class="section-title">
+      <span class="eyebrow">COURSES</span>
+      <h2>지역별 자전거 여행 코스</h2>
+      <p>우리가 달려본 길, 그리고 함께 달릴 길을 소개합니다.</p>
+    </div>
+    <div class="grid grid-4" id="courseBox"><div class="loading">불러오는 중…</div></div>
+    <div class="text-center mt-4"><a href="courses.html" class="btn btn-ghost">코스 전체 보기 →</a></div>
+  </div>
+</section>
+
+<!-- ============ 라이딩 후기 ============ -->
+<section class="section">
+  <div class="container">
+    <div class="section-title">
+      <span class="eyebrow">GALLERY</span>
+      <h2>최근 라이딩 후기</h2>
+      <p>그날의 하늘과 바람을 기록으로 남겼습니다.</p>
+    </div>
+    <div class="gallery-grid" id="reviewBox"><div class="loading">불러오는 중…</div></div>
+    <div class="text-center mt-4"><a href="board.html?board=review" class="btn btn-ghost">후기 더 보기 →</a></div>
+  </div>
+</section>
+
+<!-- ============ 공지 / 자유게시판 ============ -->
+<section class="section" style="padding-top:0">
+  <div class="container">
+    <div class="grid grid-2">
+      <div class="card card-pad">
+        <div class="row-between mb-2">
+          <h3 class="mb-0">📢 공지사항</h3>
+          <a href="board.html?board=notice" class="small">더보기 +</a>
+        </div>
+        <div id="noticeBox"><div class="loading">불러오는 중…</div></div>
+      </div>
+      <div class="card card-pad">
+        <div class="row-between mb-2">
+          <h3 class="mb-0">💬 자유게시판</h3>
+          <a href="board.html?board=free" class="small">더보기 +</a>
+        </div>
+        <div id="freeBox"><div class="loading">불러오는 중…</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CTA ============ -->
+<section class="section" style="padding-bottom:0">
+  <div class="container">
+    <div class="card card-pad text-center" style="background:linear-gradient(135deg,var(--sky-400),var(--sky-600));border:0;color:#fff">
+      <div style="font-size:2.6rem">🚴‍♀️ ☁️ 🚴‍♂️</div>
+      <h2 style="color:#fff;margin-top:8px">함께 달릴 준비가 되셨나요?</h2>
+      <p style="color:#e0f2fe;max-width:520px;margin:0 auto 22px">
+        입문자도 환영합니다. 첫 모임은 30km 이하 평지 코스로 안내해 드리고,
+        후미 지원 라이더가 끝까지 함께합니다.
+      </p>
+      <div class="row" style="justify-content:center">
+        <a href="login.html?mode=signup" class="btn btn-ghost btn-lg">회원가입</a>
+        <a href="meetups.html" class="btn btn-ghost btn-lg">모임 둘러보기</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+/* ===================================================================
+ * 홈 화면 데이터 로딩
+ * =================================================================== */
+(async () => {
+  await App.mount('home');
+
+  const E = App.escapeHtml;
+  const nowIso = new Date().toISOString();
+
+  /* --- 1) 통계 --------------------------------------------------- */
+  (async () => {
+    const y0 = new Date(new Date().getFullYear(), 0, 1).toISOString();
+    const y1 = new Date(new Date().getFullYear() + 1, 0, 1).toISOString();
+    const [smalls, courses, reviews] = await Promise.all([
+      sb.from(T('meetups')).select('id', { count: 'exact', head: true })
+        .eq('meetup_type', 'small').gte('start_at', y0).lt('start_at', y1),
+      sb.from(T('courses')).select('id', { count: 'exact', head: true }),
+      sb.from(T('posts')).select('id',  { count: 'exact', head: true }).eq('board', 'review')
+    ]);
+    App.$('#statSmall').textContent  = smalls.count  ?? 0;
+    App.$('#statCourse').textContent = courses.count ?? 0;
+    App.$('#statReview').textContent = reviews.count ?? 0;
+  })();
+
+  /* --- 2) 다가오는 모임 ------------------------------------------ */
+  (async () => {
+    const { data, error } = await sb.from(T('meetups'))
+      .select('*').eq('status', 'open').gte('start_at', nowIso)
+      .order('start_at', { ascending: true }).limit(3);
+
+    const box = App.$('#upcoming');
+    if (error) { box.innerHTML = `<div class="empty">불러오지 못했습니다: ${E(error.message)}</div>`; return; }
+    if (!data.length) { box.innerHTML = `<div class="empty"><div class="icon">🚲</div>예정된 모임이 없습니다.</div>`; return; }
+
+    box.innerHTML = data.map(m => `
+      <a class="card card-hover" href="meetup.html?id=${m.id}">
+        <div class="card-emoji">${E(m.cover_emoji || '🚴')}</div>
+        <div class="card-body">
+          <div class="row mb-1" style="gap:6px">
+            <span class="badge badge-${m.meetup_type === 'regular' ? 'regular' : 'small'}">${App.MEETUP_TYPE[m.meetup_type]}</span>
+            <span class="badge">${E(m.region)}</span>
+            <span class="badge badge-new">${App.dday(m.start_at)}</span>
+          </div>
+          <h3 style="margin-bottom:6px">${E(m.title)}</h3>
+          <p class="small muted" style="margin-bottom:12px">${E(m.summary || '')}</p>
+          <div class="tiny muted">📅 ${App.fmtMeetupDate(m.start_at)}</div>
+          <div class="tiny muted mb-2">📍 ${E(m.place || '-')} · ${m.distance_km ?? '-'}km</div>
+          <div class="progress"><span style="width:${Math.min(100, Math.round((m.applied_count / m.capacity) * 100))}%"></span></div>
+          <div class="tiny muted mt-1">신청 ${m.applied_count} / ${m.capacity}명</div>
+        </div>
+      </a>`).join('');
+  })();
+
+  /* --- 3) 지역 코스 ---------------------------------------------- */
+  (async () => {
+    const { data } = await sb.from(T('courses'))
+      .select('*').eq('is_published', true).order('sort_order').limit(4);
+    const box = App.$('#courseBox');
+    if (!data?.length) { box.innerHTML = `<div class="empty">등록된 코스가 없습니다.</div>`; return; }
+    box.innerHTML = data.map(c => `
+      <a class="card card-hover" href="courses.html#c${c.id}">
+        <div class="card-emoji" style="font-size:2.6rem">${E(c.emoji || '🚵')}</div>
+        <div class="card-body" style="padding:18px">
+          <span class="badge mb-1">${E(c.region)}</span>
+          <h3 style="font-size:1rem;margin:6px 0">${E(c.title)}</h3>
+          <p class="tiny muted mb-0">${c.distance_km}km · 약 ${c.duration_hours}시간 · ${App.DIFFICULTY[c.difficulty]}</p>
+        </div>
+      </a>`).join('');
+  })();
+
+  /* --- 4) 라이딩 후기 -------------------------------------------- */
+  (async () => {
+    const { data } = await sb.from(T('posts'))
+      .select('id,title,author_name,image_url,created_at,region')
+      .eq('board', 'review').order('created_at', { ascending: false }).limit(3);
+    const box = App.$('#reviewBox');
+    if (!data?.length) { box.innerHTML = `<div class="empty">등록된 후기가 없습니다.</div>`; return; }
+    box.innerHTML = data.map(p => `
+      <a class="card card-hover gallery-card" href="post.html?id=${p.id}">
+        <div class="thumb">${p.image_url
+          ? `<img src="${E(p.image_url)}" alt="${E(p.title)}" loading="lazy">`
+          : `<div class="card-emoji" style="height:100%">📸</div>`}</div>
+        <div class="card-body">
+          <h3>${E(p.title)}</h3>
+          <p class="tiny muted mb-0">${E(p.author_name)} · ${App.fmtDate(p.created_at)}${p.region ? ' · ' + E(p.region) : ''}</p>
+        </div>
+      </a>`).join('');
+  })();
+
+  /* --- 5) 공지 / 자유게시판 최신글 -------------------------------- */
+  async function latest(board, target) {
+    const { data } = await sb.from(T('posts'))
+      .select('id,title,created_at,author_name')
+      .eq('board', board).order('is_pinned', { ascending: false })
+      .order('created_at', { ascending: false }).limit(5);
+    const box = App.$(target);
+    if (!data?.length) { box.innerHTML = `<p class="small muted mb-0">등록된 글이 없습니다.</p>`; return; }
+    box.innerHTML = `<ul style="list-style:none;padding:0;margin:0;display:grid;gap:11px">` + data.map(p => `
+      <li class="row-between" style="gap:10px;flex-wrap:nowrap">
+        <a href="post.html?id=${p.id}" style="color:var(--body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          ${App.isNew(p.created_at) ? '<span class="badge badge-new tiny" style="padding:1px 7px">N</span> ' : ''}${E(p.title)}
+        </a>
+        <span class="tiny muted" style="white-space:nowrap">${App.fmtListDate(p.created_at)}</span>
+      </li>`).join('') + `</ul>`;
+  }
+  latest('notice', '#noticeBox');
+  latest('free',   '#freeBox');
+})();
+</script>
+</body>
+</html>

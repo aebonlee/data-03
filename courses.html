@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>지역별 자전거 코스 · 스카이라이더스</title>
+<meta name="description" content="서울부터 제주까지, 스카이라이더스가 달려본 지역별 자전거 여행 코스를 소개합니다.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚴</text></svg>">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<section class="page-head">
+  <span class="cloud c1">☁️</span>
+  <span class="cloud c2">🗺️</span>
+  <h1>지역별 자전거 코스</h1>
+  <p>서울에서 제주까지 — 우리가 달려본 길을 소개합니다</p>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="chips mb-3" id="regionChips"><button class="chip active" data-region="">전체</button></div>
+    <div id="adminBar"></div>
+    <div class="grid grid-3" id="list"><div class="loading">불러오는 중…</div></div>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+(async () => {
+  await App.mount('courses');
+  const E = App.escapeHtml;
+
+  App.REGIONS.forEach(r =>
+    App.$('#regionChips').insertAdjacentHTML('beforeend', `<button class="chip" data-region="${r}">${r}</button>`));
+
+  if (App.isAdmin()) {
+    App.$('#adminBar').innerHTML =
+      `<div class="row-between mb-2"><span class="small muted">관리자 모드</span>
+       <a href="admin.html#courses" class="btn btn-soft btn-sm">＋ 코스 등록·관리</a></div>`;
+  }
+
+  let region = '';
+  App.$('#regionChips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip'); if (!chip) return;
+    App.$$('#regionChips .chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    region = chip.dataset.region;
+    load();
+  });
+
+  async function load() {
+    const box = App.$('#list');
+    box.innerHTML = `<div class="loading">불러오는 중…</div>`;
+
+    let q = sb.from(T('courses')).select('*').eq('is_published', true).order('sort_order');
+    if (region) q = q.eq('region', region);
+
+    const { data, error } = await q;
+    if (error) { box.innerHTML = `<div class="empty">불러오지 못했습니다: ${E(error.message)}</div>`; return; }
+    if (!data.length) { box.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="icon">🗺️</div>등록된 코스가 없습니다.</div>`; return; }
+
+    box.innerHTML = data.map(c => `
+      <article class="card card-hover" id="c${c.id}">
+        ${c.image_url
+          ? `<img class="card-thumb" src="${E(c.image_url)}" alt="${E(c.title)}" loading="lazy">`
+          : `<div class="card-emoji">${E(c.emoji || '🚵')}</div>`}
+        <div class="card-body">
+          <div class="row mb-1" style="gap:6px">
+            <span class="badge">${E(c.region)}</span>
+            <span class="badge badge-${c.difficulty}">${App.DIFFICULTY[c.difficulty]}</span>
+            ${c.season ? `<span class="badge">${E(c.season)}</span>` : ''}
+          </div>
+          <h3 style="margin-bottom:6px">${E(c.emoji || '')} ${E(c.title)}</h3>
+          <p class="small muted" style="margin-bottom:12px">${E(c.summary || '')}</p>
+          <div class="row tiny muted mb-2" style="gap:14px">
+            <span>📏 ${c.distance_km ?? '-'}km</span>
+            <span>⏱️ 약 ${c.duration_hours ?? '-'}시간</span>
+          </div>
+          <details>
+            <summary style="cursor:pointer;font-size:.88rem;font-weight:700;color:var(--sky-700)">코스 설명 보기</summary>
+            <div class="small mt-2" style="white-space:pre-wrap;color:var(--body)">${E(c.content || '')}</div>
+            ${c.map_url ? `<a class="btn btn-ghost btn-sm mt-2" href="${E(c.map_url)}" target="_blank" rel="noopener">지도에서 보기 ↗</a>` : ''}
+          </details>
+        </div>
+      </article>`).join('');
+
+    /* index.html에서 #c3 형태로 들어온 경우 해당 카드로 스크롤 */
+    if (location.hash) {
+      const t = document.querySelector(location.hash);
+      if (t) { t.scrollIntoView({ behavior: 'smooth', block: 'center' }); t.style.borderColor = 'var(--sky-400)'; }
+    }
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>

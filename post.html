@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>게시글 · 스카이라이더스</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚴</text></svg>">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<section class="page-head">
+  <span class="cloud c1">☁️</span>
+  <h1 id="headTitle">게시글</h1>
+  <p id="headSub">&nbsp;</p>
+</section>
+
+<section class="section">
+  <div class="container" style="max-width:860px">
+    <div class="row-between mb-2">
+      <a href="#" id="backLink" class="small">← 목록으로</a>
+      <div class="row" id="topActions"></div>
+    </div>
+
+    <div class="card card-pad" id="postBox"><div class="loading">불러오는 중…</div></div>
+
+    <div id="answerArea"></div>
+
+    <!-- 댓글 -->
+    <div class="card card-pad mt-3" id="commentArea" style="display:none">
+      <h3 class="mb-2">💬 댓글 <span class="badge" id="commentCount">0</span></h3>
+      <div id="commentList"></div>
+      <hr>
+      <form id="commentForm">
+        <div class="field-row" id="guestFields" style="display:none">
+          <div class="field">
+            <label>이름 <span class="req">*</span></label>
+            <input class="input" name="author_name" maxlength="20" placeholder="닉네임">
+          </div>
+          <div class="field">
+            <label>비밀번호 <span class="req">*</span></label>
+            <input class="input" type="password" name="password" minlength="4" maxlength="30" placeholder="4자 이상">
+          </div>
+        </div>
+        <div class="field mb-2">
+          <textarea class="textarea" name="content" style="min-height:96px" maxlength="1000"
+                    placeholder="따뜻한 댓글이 라이딩을 더 즐겁게 만듭니다 🚲" required></textarea>
+        </div>
+        <div class="row-between">
+          <span class="tiny muted" id="commentAs"></span>
+          <button class="btn btn-primary btn-sm" type="submit">댓글 등록</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="text-center mt-4">
+      <a href="#" id="bottomBack" class="btn btn-ghost">목록으로</a>
+    </div>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/app.js"></script>
+<script>
+(async () => {
+  await App.mount('board');
+  const E  = App.escapeHtml;
+  const id = Number(App.qs('id'));
+  const postBox = App.$('#postBox');
+
+  if (!id) { postBox.innerHTML = `<div class="empty">잘못된 접근입니다.</div>`; return; }
+
+  let post = null;
+
+  /* 내가 이 글의 주인인가? (회원이면 author_id, 비회원이면 비밀번호로 확인) */
+  const isMine  = () => post.author_id && App.isLogin() && post.author_id === App.user().id;
+  const isGuest = () => !post.author_id;
+  const canEdit = () => isMine() || App.isAdmin() || isGuest();
+
+  /* ---------------- 로딩 ---------------- */
+  async function loadPost() {
+    const { data } = await sb.from(T('posts')).select('*').eq('id', id).maybeSingle();
+    if (data) return data;
+
+    /* RLS에 막혔다면 = 비밀글. 비밀번호로 열어봅니다. */
+    const pw = await App.askPassword('🔒 비밀글', '작성 시 입력한 비밀번호를 넣어주세요.');
+    if (!pw) return null;
+    const { data: rows, error } = await sb.rpc('bike_read_secret_post', { p_id: id, p_password: pw });
+    if (error) { App.err(App.readError(error)); return null; }
+    return rows?.[0] ?? null;
+  }
+
+  /* 조회수는 세션당 1회만 올립니다. */
+  async function bumpView() {
+    const key = 'skyriders-viewed-' + id;
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, '1');
+    await sb.rpc('bike_increment_view', { p_id: id });
+  }
+
+  /* ---------------- 렌더 ---------------- */
+  function render() {
+    const meta = App.BOARDS[post.board];
+    document.title = `${post.title} · 스카이라이더스`;
+    App.$('#headTitle').textContent = `${meta.emoji} ${meta.name}`;
+    App.$('#headSub').textContent   = meta.desc;
+    const listUrl = `board.html?board=${post.board}`;
+    App.$('#backLink').href  = listUrl;
+    App.$('#bottomBack').href = listUrl;
+
+    postBox.innerHTML = `
+      <div class="post-head">
+        <div class="row mb-1" style="gap:6px;flex-wrap:wrap">
+          ${post.is_pinned ? '<span class="badge badge-regular">공지</span>' : ''}
+          ${post.region ? `<span class="badge">${E(post.region)}</span>` : ''}
+          ${post.board === 'qna' ? (post.is_answered
+              ? '<span class="badge badge-open">답변완료</span>'
+              : '<span class="badge">답변대기</span>') : ''}
+          ${post.is_secret ? '<span class="badge badge-closed">🔒 비밀글</span>' : ''}
+        </div>
+        <h1>${E(post.title)}</h1>
+        <div class="post-meta">
+          <span>✍️ ${E(post.author_name)}</span>
+          <span>🕒 ${App.fmtDateTime(post.created_at)}</span>
+          <span>👁️ ${post.view_count}</span>
+        </div>
+      </div>
+      <div class="post-content">${bodyHtml()}</div>`;
+
+    /* 수정/삭제 버튼 */
+    const actions = App.$('#topActions');
+    actions.innerHTML = canEdit() ? `
+      <a class="btn btn-ghost btn-sm" id="btnEdit">✏️ 수정</a>
+      <button class="btn btn-danger btn-sm" id="btnDelete">🗑️ 삭제</button>` : '';
+    if (canEdit()) {
+      App.$('#btnEdit').addEventListener('click', goEdit);
+      App.$('#btnDelete').addEventListener('click', doDelete);
+    }
+
+    renderAnswer();
+    App.$('#commentArea').style.display = '';
+    setupCommentForm();
+    loadComments();
+  }
+
+  function bodyHtml() {
+    let html = App.nl2br(post.content);
+    if (post.image_url) {
+      html = `<img src="${E(post.image_url)}" alt="${E(post.title)}" loading="lazy">` + html;
+    }
+    if (Array.isArray(post.images) && post.images.length) {
+      html += post.images.map(u => `<img src="${E(u)}" alt="" loading="lazy">`).join('');
+    }
+    return html;
+  }
+
+  /* ---------------- Q&A 답변 ---------------- */
+  function renderAnswer() {
+    const box = App.$('#answerArea');
+    if (post.board !== 'qna') { box.innerHTML = ''; return; }
+
+    let html = '';
+    if (post.answer) {
+      html += `<div class="card card-pad mt-3">
+        <div class="answer-box">
+          <h4>💡 운영진 답변</h4>
+          <div class="body">${App.nl2br(post.answer)}</div>
+          <p class="tiny muted mt-2 mb-0">${App.fmtDateTime(post.answered_at)}</p>
+        </div>
+      </div>`;
+    }
+    if (App.isAdmin()) {
+      html += `<div class="card card-pad mt-3">
+        <h3 class="mb-2">🛠️ 답변 ${post.answer ? '수정' : '작성'}</h3>
+        <textarea class="textarea" id="answerInput" style="min-height:130px"
+          placeholder="문의에 대한 답변을 작성해 주세요.">${E(post.answer || '')}</textarea>
+        <div class="row mt-2">
+          <button class="btn btn-primary btn-sm" id="btnAnswer">답변 저장</button>
+          ${post.answer ? '<button class="btn btn-danger btn-sm" id="btnAnswerDel">답변 삭제</button>' : ''}
+        </div>
+      </div>`;
+    }
+    box.innerHTML = html;
+
+    App.$('#btnAnswer')?.addEventListener('click', async () => {
+      const text = App.$('#answerInput').value.trim();
+      if (!text) { App.err('답변 내용을 입력해 주세요.'); return; }
+      const { error } = await sb.from(T('posts')).update({
+        answer: text, is_answered: true, answered_at: new Date().toISOString()
+      }).eq('id', id);
+      if (error) { App.err(App.readError(error)); return; }
+      App.ok('답변을 저장했습니다.');
+      post = await loadPost(); render();
+    });
+
+    App.$('#btnAnswerDel')?.addEventListener('click', async () => {
+      if (!App.confirmBox('답변을 삭제할까요?')) return;
+      const { error } = await sb.from(T('posts')).update({
+        answer: null, is_answered: false, answered_at: null
+      }).eq('id', id);
+      if (error) { App.err(App.readError(error)); return; }
+      App.ok('답변을 삭제했습니다.');
+      post = await loadPost(); render();
+    });
+  }
+
+  /* ---------------- 수정 ---------------- */
+  async function goEdit() {
+    if (isGuest() && !App.isAdmin()) {
+      const pw = await App.askPassword('글 수정', '작성 시 입력한 비밀번호를 넣어주세요.');
+      if (!pw) return;
+      /* 비밀번호가 맞는지 미리 확인 — 내용은 그대로 두고 자기 자신으로 업데이트 */
+      const { error } = await sb.rpc('bike_update_post', { p_id: id, p_password: pw, p_title: post.title });
+      if (error) { App.err(App.readError(error)); return; }
+      sessionStorage.setItem('skyriders-edit-pw-' + id, pw);
+    }
+    location.href = `write.html?board=${post.board}&id=${id}`;
+  }
+
+  /* ---------------- 삭제 ---------------- */
+  async function doDelete() {
+    let pw = null;
+    if (isGuest() && !App.isAdmin()) {
+      pw = await App.askPassword('글 삭제', '작성 시 입력한 비밀번호를 넣어주세요.');
+      if (!pw) return;
+    } else if (!App.confirmBox('이 글을 삭제하시겠습니까? 되돌릴 수 없습니다.')) return;
+
+    const { error } = await sb.rpc('bike_delete_post', { p_id: id, p_password: pw });
+    if (error) { App.err(App.readError(error)); return; }
+    App.ok('삭제되었습니다.');
+    setTimeout(() => location.href = `board.html?board=${post.board}`, 700);
+  }
+
+  /* ---------------- 댓글 ---------------- */
+  let commentFormBound = false;
+  function setupCommentForm() {
+    App.$('#guestFields').style.display = App.isLogin() ? 'none' : '';
+    App.$('#commentAs').textContent = App.isLogin()
+      ? `${App.myName()} 님으로 작성됩니다.`
+      : '비회원은 이름과 비밀번호를 입력해 주세요.';
+
+    if (commentFormBound) return;    // 리스너 중복 등록 방지
+    commentFormBound = true;
+
+    App.$('#commentForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      const { error } = await sb.rpc('bike_create_comment', {
+        p_post_id:     id,
+        p_content:     f.content.value.trim(),
+        p_author_name: App.isLogin() ? null : f.author_name.value.trim(),
+        p_password:    App.isLogin() ? null : f.password.value
+      });
+      if (error) { App.err(App.readError(error)); return; }
+      f.content.value = '';
+      if (!App.isLogin()) f.password.value = '';
+      App.ok('댓글이 등록되었습니다.');
+      loadComments();
+    });
+  }
+
+  async function loadComments() {
+    const { data, error } = await sb.from(T('comments'))
+      .select('*').eq('post_id', id).order('created_at', { ascending: true });
+    const list = App.$('#commentList');
+    if (error) { list.innerHTML = `<p class="small muted">댓글을 불러오지 못했습니다.</p>`; return; }
+
+    App.$('#commentCount').textContent = data.length;
+    if (!data.length) { list.innerHTML = `<p class="small muted">첫 댓글을 남겨보세요 🚲</p>`; return; }
+
+    list.innerHTML = data.map(c => {
+      const mine = (c.author_id && App.isLogin() && c.author_id === App.user().id) || !c.author_id || App.isAdmin();
+      return `
+      <div class="comment">
+        <div class="comment-head">
+          <span class="comment-name">${E(c.author_name)}</span>
+          <span class="comment-date">${App.fmtDateTime(c.created_at)}</span>
+          <span class="spacer"></span>
+          ${mine ? `<button class="btn btn-danger btn-sm" data-cdel="${c.id}" data-guest="${c.author_id ? 0 : 1}">삭제</button>` : ''}
+        </div>
+        <div class="comment-body">${App.nl2br(c.content)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  App.$('#commentList').addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-cdel]'); if (!btn) return;
+    const cid = Number(btn.dataset.cdel);
+    let pw = null;
+    if (btn.dataset.guest === '1' && !App.isAdmin()) {
+      pw = await App.askPassword('댓글 삭제', '댓글 작성 시 입력한 비밀번호를 넣어주세요.');
+      if (!pw) return;
+    } else if (!App.confirmBox('댓글을 삭제할까요?')) return;
+
+    const { error } = await sb.rpc('bike_delete_comment', { p_id: cid, p_password: pw });
+    if (error) { App.err(App.readError(error)); return; }
+    App.ok('댓글을 삭제했습니다.');
+    loadComments();
+  });
+
+  /* ---------------- 시작 ---------------- */
+  post = await loadPost();
+  if (!post) {
+    postBox.innerHTML = `<div class="empty"><div class="icon">🔒</div>
+      <p>글을 볼 수 없습니다.</p>
+      <p class="small">삭제되었거나 비밀글일 수 있습니다.</p>
+      <a class="btn btn-ghost btn-sm mt-2" href="board.html?board=free">목록으로</a></div>`;
+    return;
+  }
+  await bumpView();
+  post.view_count += 1;
+  render();
+})();
+</script>
+</body>
+</html>
